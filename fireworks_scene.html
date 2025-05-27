@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>绚丽烟花场景</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #000005; /* Very dark blue/black */
+            color: #00ff00;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            text-align: center;
+        }
+
+        #fireworksScreen {
+            width: 100%;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        #fireworksCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div id="fireworksScreen">
+        <canvas id="fireworksCanvas"></canvas>
+    </div>
+
+    <script>
+        // --- Stage 3: Fireworks (Standalone) ---
+        let fw_pi, fw_ctx, fw_canvas, fw_cx, fw_cy, fw_playerZ, fw_playerX, fw_playerY, fw_playerVX, fw_playerVY, fw_playerVZ, fw_pitch, fw_yaw, fw_pitchV, fw_yawV;
+        let fw_scale, fw_seedTimer, fw_seedInterval, fw_seedLife, fw_gravity;
+        let fw_seeds, fw_sparkPics, fw_sparks;
+        let fw_pow = [];
+        let fw_frames;
+        let fw_s = "https://cantelope.org/NYE/";
+        let fireworksLoopActive = false;
+        let fw_animationFrameId;
+
+        function fw_initVars(){
+            fw_pi=Math.PI;
+            fw_canvas=document.getElementById("fireworksCanvas");
+            if (!fw_canvas) { console.error("Fireworks canvas not found!"); return false; }
+            fw_ctx=fw_canvas.getContext("2d");
+            fw_canvas.width=window.innerWidth;
+            fw_canvas.height=window.innerHeight;
+            fw_cx=fw_canvas.width/2;
+            fw_cy=fw_canvas.height/2;
+            fw_playerZ=-25;
+            fw_playerX=fw_playerY=fw_playerVX=fw_playerVY=fw_playerVZ=fw_pitch=fw_yaw=fw_pitchV=fw_yawV=0;
+            fw_scale=600;
+            fw_seedTimer=0;fw_seedInterval=3,fw_seedLife=100;fw_gravity=.02; // More frequent
+            fw_seeds=new Array();
+            fw_sparkPics=new Array();
+            for(let i=1;i<=10;++i){
+                let sparkPic=new Image();
+                sparkPic.src=fw_s+"spark"+i+".png";
+                fw_sparkPics.push(sparkPic);
+            }
+            fw_sparks=new Array();
+            fw_pow = [];
+            for(let i=1; i<=4; ++i) {
+                const audio = new Audio(fw_s+"pow"+i+".ogg");
+                fw_pow[i-1] = audio;
+            }
+            fw_frames = 0;
+            return true;
+        }
+
+        function fw_rasterizePoint(x,y,z){
+            var p,d;
+            x-=fw_playerX; y-=fw_playerY; z-=fw_playerZ;
+            p=Math.atan2(x,z); d=Math.sqrt(x*x+z*z);
+            x=Math.sin(p-fw_yaw)*d; z=Math.cos(p-fw_yaw)*d;
+            p=Math.atan2(y,z); d=Math.sqrt(y*y+z*z);
+            y=Math.sin(p-fw_pitch)*d; z=Math.cos(p-fw_pitch)*d;
+            var rx1=-1000,ry1=1,rx2=1000,ry2=1,rx3=0,ry3=0,rx4=x,ry4=z,uc=(ry4-ry3)*(rx2-rx1)-(rx4-rx3)*(ry2-ry1);
+            if(!uc) return {x:0,y:0,d:-1};
+            var ua=((rx4-rx3)*(ry1-ry3)-(ry4-ry3)*(rx1-rx3))/uc;
+            var ub=((rx2-rx1)*(ry1-ry3)-(ry2-ry1)*(rx1-rx3))/uc;
+            if(!z)z=.000000001;
+            if(ua>0&&ua<1&&ub>0&&ub<1){
+                return { x:fw_cx+(rx1+ua*(rx2-rx1))*fw_scale, y:fw_cy+y/z*fw_scale, d:Math.sqrt(x*x+y*y+z*z) };
+            }else{
+                return { x:fw_cx+(rx1+ua*(rx2-rx1))*fw_scale, y:fw_cy+y/z*fw_scale, d:-1 };
+            }
+        }
+
+        function fw_spawnSeed(){
+            let seed=new Object();
+            seed.x=-50+Math.random()*100; seed.y=25; seed.z=-50+Math.random()*100;
+            seed.vx=.1-Math.random()*.2; seed.vy=-1.5; seed.vz=.1-Math.random()*.2;
+            seed.born=fw_frames;
+            fw_seeds.push(seed);
+        }
+
+        function fw_splode(x,y,z){
+            let t=120+parseInt(Math.random()*250); // More particles
+            let sparkV=2.0+Math.random()*3.5; // Faster particles
+            let type=parseInt(Math.random()*4); // More color variations
+            let pic1, pic2, pic3;
+            switch(type){
+                case 0: pic1=parseInt(Math.random()*10); break;
+                case 1: pic1=parseInt(Math.random()*10); do{ pic2=parseInt(Math.random()*10); }while(pic2==pic1); break;
+                case 2: pic1=parseInt(Math.random()*10); do{ pic2=parseInt(Math.random()*10); }while(pic2==pic1); do{ pic3=parseInt(Math.random()*10); }while(pic3==pic1 || pic3==pic2); break;
+            }
+            for(let m=1;m<t;++m){
+                let spark=new Object();
+                spark.x=x; spark.y=y; spark.z=z;
+                let p1=fw_pi*2*Math.random(); let p2=fw_pi*Math.random();
+                let v=sparkV*(1+Math.random()/6)
+                spark.vx=Math.sin(p1)*Math.sin(p2)*v; spark.vz=Math.cos(p1)*Math.sin(p2)*v; spark.vy=Math.cos(p2)*v;
+                switch(type){
+                    case 0: spark.img=fw_sparkPics[pic1]; break;
+                    case 1: spark.img=fw_sparkPics[parseInt(Math.random()*2)?pic1:pic2]; break;
+                    case 2: switch(parseInt(Math.random()*3)){ case 0: spark.img=fw_sparkPics[pic1]; break; case 1: spark.img=fw_sparkPics[pic2]; break; case 2: spark.img=fw_sparkPics[pic3]; break; } break;
+                }
+                spark.radius=50+Math.random()*80; // Larger and brighter sparks
+                spark.alpha=1.2; spark.trail=new Array();
+                fw_sparks.push(spark);
+            }
+            let soundToPlay = fw_pow[parseInt(Math.random()*4)];
+            if (soundToPlay) {
+                 let d_sound=Math.sqrt((x-fw_playerX)*(x-fw_playerX)+(y-fw_playerY)*(y-fw_playerY)+(z-fw_playerZ)*(z-fw_playerZ));
+                 soundToPlay.volume=Math.min(1, 1.5/(1+d_sound/10));
+                 soundToPlay.play().catch(e => console.warn("Fireworks sound play failed:", e));
+            }
+        }
+
+        function fw_doLogic(){
+            if(fw_seedTimer<fw_frames){ fw_seedTimer=fw_frames+fw_seedInterval*Math.random()*10; fw_spawnSeed(); }
+            for(let i=0;i<fw_seeds.length;++i){
+                fw_seeds[i].vy+=fw_gravity; fw_seeds[i].x+=fw_seeds[i].vx; fw_seeds[i].y+=fw_seeds[i].vy; fw_seeds[i].z+=fw_seeds[i].vz;
+                if(fw_frames-fw_seeds[i].born>fw_seedLife){ fw_splode(fw_seeds[i].x,fw_seeds[i].y,fw_seeds[i].z); fw_seeds.splice(i,1); }
+            }
+            for(let i=0;i<fw_sparks.length;++i){
+                if(fw_sparks[i].alpha>0 && fw_sparks[i].radius>5){
+                    fw_sparks[i].alpha-=.005; // Even slower fade for more vivid colors
+                    fw_sparks[i].radius/=1.01;
+                    fw_sparks[i].vy+=fw_gravity;
+                    let point=new Object(); point.x=fw_sparks[i].x; point.y=fw_sparks[i].y; point.z=fw_sparks[i].z;
+                    if(fw_sparks[i].trail.length){
+                        let x=fw_sparks[i].trail[fw_sparks[i].trail.length-1].x; let y=fw_sparks[i].trail[fw_sparks[i].trail.length-1].y; let z=fw_sparks[i].trail[fw_sparks[i].trail.length-1].z;
+                        let d=((point.x-x)*(point.x-x)+(point.y-y)*(point.y-y)+(point.z-z)*(point.z-z));
+                        if(d>9){ fw_sparks[i].trail.push(point); }
+                    }else{ fw_sparks[i].trail.push(point); }
+                    if(fw_sparks[i].trail.length>7)fw_sparks[i].trail.splice(0,1); // Longer trails
+                    fw_sparks[i].x+=fw_sparks[i].vx; fw_sparks[i].y+=fw_sparks[i].vy; fw_sparks[i].z+=fw_sparks[i].vz;
+                    fw_sparks[i].vx/=1.075; fw_sparks[i].vy/=1.075; fw_sparks[i].vz/=1.075;
+                }else{ fw_sparks.splice(i,1); }
+            }
+            let p=Math.atan2(fw_playerX,fw_playerZ); let d=Math.sqrt(fw_playerX*fw_playerX+fw_playerZ*fw_playerZ);
+            d+=Math.sin(fw_frames/80)/1.25; let t=Math.sin(fw_frames/200)/40;
+            fw_playerX=Math.sin(p+t)*d; fw_playerZ=Math.cos(p+t)*d;
+            fw_yaw=fw_pi+p+t;
+        }
+
+        function fw_draw(){
+            if (!fw_ctx) return;
+            fw_ctx.clearRect(0,0,fw_cx*2,fw_cy*2);
+            fw_ctx.fillStyle="#ff8";
+            for(let i=-100;i<100;i+=3){
+                for(let j=-100;j<100;j+=4){
+                    let x=i;z=j;y=25;
+                    let point=fw_rasterizePoint(x,y,z);
+                    if(point.d!=-1){
+                        let size=250/(1+point.d);
+                        let d_ground = Math.sqrt(x * x + z * z);
+                        let a = 0.75 - Math.pow(d_ground / 100, 6) * 0.75;
+                        if(a>0){ fw_ctx.globalAlpha = a; fw_ctx.fillRect(point.x-size/2,point.y-size/2,size,size); }
+                    }
+                }
+            }
+            fw_ctx.globalAlpha=1;
+            for(let i=0;i<fw_seeds.length;++i){
+                let point=fw_rasterizePoint(fw_seeds[i].x,fw_seeds[i].y,fw_seeds[i].z);
+                if(point.d!=-1){ let size=200/(1+point.d); fw_ctx.fillRect(point.x-size/2,point.y-size/2,size,size); }
+            }
+            let point1=new Object();
+            for(let i=0;i<fw_sparks.length;++i){
+                let point=fw_rasterizePoint(fw_sparks[i].x,fw_sparks[i].y,fw_sparks[i].z);
+                if(point.d!=-1){
+                    let size=fw_sparks[i].radius*200/(1+point.d);
+                    if(fw_sparks[i].alpha<0)fw_sparks[i].alpha=0;
+                    if(fw_sparks[i].trail.length){
+                        point1.x=point.x; point1.y=point.y;
+                        let r = Math.floor(Math.random() * 156) + 100;
+                        let g = Math.floor(Math.random() * 156) + 100;
+                        let b = Math.floor(Math.random() * 156) + 100;
+                        const brightComponent = Math.floor(Math.random() * 3);
+                        if (brightComponent === 0) r = Math.floor(Math.random() * 56) + 200;
+                        else if (brightComponent === 1) g = Math.floor(Math.random() * 56) + 200;
+                        else b = Math.floor(Math.random() * 56) + 200;
+                        fw_ctx.strokeStyle = "rgb(" + r + "," + g + "," + b + ")"; // Brighter colors
+                        for(let j=fw_sparks[i].trail.length-1;j>=0;--j){
+                            let point2=fw_rasterizePoint(fw_sparks[i].trail[j].x,fw_sparks[i].trail[j].y,fw_sparks[i].trail[j].z);
+                            if(point2.d!=-1){
+                                fw_ctx.globalAlpha=j/fw_sparks[i].trail.length*fw_sparks[i].alpha/2;
+                                fw_ctx.beginPath(); fw_ctx.moveTo(point1.x,point1.y);
+                                fw_ctx.lineWidth=1+fw_sparks[i].radius*10/(fw_sparks[i].trail.length-j)/(1+point2.d);
+                                fw_ctx.lineTo(point2.x,point2.y); fw_ctx.stroke();
+                                point1.x=point2.x; point1.y=point2.y;
+                            }
+                        }
+                    }
+                    fw_ctx.globalAlpha=fw_sparks[i].alpha;
+                    if (fw_sparks[i].img && fw_sparks[i].img.complete && fw_sparks[i].img.naturalHeight !== 0) {
+                         fw_ctx.drawImage(fw_sparks[i].img,point.x-size/2,point.y-size/2,size,size);
+                    }
+                }
+            }
+        }
+
+        function fw_frame(){
+            if (!fireworksLoopActive || !fw_ctx) return;
+            if(fw_frames>100000){ fw_seedTimer=0; fw_frames=0; }
+            fw_frames++;
+            fw_draw();
+            fw_doLogic();
+            fw_animationFrameId = requestAnimationFrame(fw_frame);
+        }
+
+        function initFireworksScreen() {
+            if (!fw_initVars()) {
+                console.error("Failed to initialize fireworks variables.");
+                const fwScreen = document.getElementById('fireworksScreen');
+                if (fwScreen) fwScreen.innerHTML = '<p style="color:red; font-size:1.5em;">烟花效果加载失败。</p>';
+                return;
+            }
+            fireworksLoopActive = true;
+            if (fw_animationFrameId) cancelAnimationFrame(fw_animationFrameId);
+            fw_frame();
+
+            setTimeout(() => {
+                const fwScreen = document.getElementById('fireworksScreen');
+                if (fwScreen) {
+                    const existingFinalMsg = fwScreen.querySelector('.final-fireworks-message');
+                    if (existingFinalMsg) existingFinalMsg.remove();
+                    const finalMsg = document.createElement('div');
+                    finalMsg.className = 'final-fireworks-message';
+                    finalMsg.textContent = "恭喜小姐！19岁啦！！！";
+                    finalMsg.style.cssText = "position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); color:#fff; font-size:2.5em; text-shadow: 0 0 10px #ff00ff; z-index:75; opacity:0; transition: opacity 2s; pointer-events: none;";
+                    fwScreen.appendChild(finalMsg);
+                    setTimeout(() => finalMsg.style.opacity = 1, 100);
+                }
+            }, 20000);
+        }
+
+        window.addEventListener('resize', () => {
+            if (fw_canvas) {
+                fw_canvas.width = window.innerWidth;
+                fw_canvas.height = window.innerHeight;
+                fw_cx = fw_canvas.width / 2;
+                fw_cy = fw_canvas.height / 2;
+            }
+        });
+
+        window.onload = () => {
+            initFireworksScreen();
+        };
+    </script>
+</body>
+</html>

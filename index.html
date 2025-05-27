@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>生日特别呈现</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            font-family: Arial, sans-serif;
+        }
+
+        .scene {
+            width: 100%;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+            display: none; /* Hidden by default */
+        }
+
+        #starScene {
+            background-color: #050016; /* Match star.html background */
+            display: flex; /* Make it visible initially */
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #birthdayScene {
+            background-color: #050016; /* Match birthday.html background */
+            color: #FF69B4; /* Hot Pink for more vibrant text */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #fireworksSceneContainer {
+            background-color: #000005; /* Match fireworks_scene.html background */
+            color: #00ff00;
+        }
+
+        #fireworksCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        #message {
+            font-size: clamp(2rem, 6vw, 3.5rem); /* Larger font size */
+            max-width: 80%;
+            line-height: 1.6;
+            z-index: 10; /* Ensure message is above stars */
+            font-weight: bold;
+            text-shadow: 0 0 5px #fff, 0 0 10px #fff, 0 0 15px #FF69B4, 0 0 20px #FF69B4; /* Enhanced glow */
+            padding: 20px;
+            border-radius: 15px;
+            background-color: rgba(0,0,0,0.3); /* Slight dark background for better readability */
+        }
+
+        .char {
+            display: inline-block;
+            opacity: 0;
+            animation: blink_anim 1s infinite alternate; /* Renamed to avoid conflict */
+        }
+
+        @keyframes blink_anim {
+            0% { opacity: 0; }
+            100% { opacity: 1; }
+        }
+
+        .star_particle {
+            position: absolute;
+            background-color: white;
+            border-radius: 50%;
+            pointer-events: none;
+            animation: twinkle_anim 1s infinite ease-in-out alternate; /* Renamed */
+        }
+
+        @keyframes twinkle_anim {
+            from { opacity: 0.2; transform: scale(0.8); }
+            to { opacity: 1; transform: scale(1.2); }
+        }
+
+        /* Input box styles */
+        #inputContainer {
+            position: relative;
+            z-index: 100; /* Above the Three.js canvas */
+        }
+
+        #entryInput {
+            padding: 15px 25px;
+            font-size: 1.2em;
+            border-radius: 25px;
+            border: 2px solid #8A2BE2; /* Violet border */
+            background-color: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            outline: none;
+            text-align: center;
+            box-shadow: 0 0 15px rgba(138, 43, 226, 0.7);
+            transition: all 0.3s ease;
+        }
+
+        #entryInput::placeholder {
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        #entryInput:focus {
+            border-color: #FF00FF; /* Magenta on focus */
+            box-shadow: 0 0 25px rgba(255, 0, 255, 0.9);
+        }
+
+        .final-fireworks-message {
+            position:absolute; 
+            top:50%; 
+            left:50%; 
+            transform:translate(-50%, -50%); 
+            color:#fff; 
+            font-size:2.5em; 
+            text-shadow: 0 0 10px #ff00ff; 
+            z-index:75; 
+            opacity:0; 
+            transition: opacity 2s; 
+            pointer-events: none;
+        }
+
+    </style>
+</head>
+<body>
+
+    <!-- Scene 1: Star Scene with Input -->
+    <div id="starScene" class="scene" style="display: flex;">
+        <iframe id="starFrame" src="star.html" frameborder="0" style="width: 100%; height: 100%; position: absolute; top: 0; left: 0; z-index: 1;"></iframe>
+        <div id="inputContainer" style="position: relative; z-index: 100; /* Ensure input is above iframe */">
+            <input type="text" id="entryInput" placeholder="输入任意内容开始...">
+        </div>
+    </div>
+    <!-- Scene 2: Birthday Message -->
+    <div id="birthdayScene" class="scene">
+        <div id="message"></div>
+    </div>
+
+    <!-- Scene 3: Fireworks -->
+    <div id="fireworksSceneContainer" class="scene">
+        <canvas id="fireworksCanvas"></canvas>
+    </div>
+
+    <script type="module">
+        // --- Star Scene (Scene 1) --- 
+        // The star scene is now primarily handled by an iframe loading star.html.
+        // The Three.js code below is for a fallback or if iframe is not desired / has issues.
+        // For now, it's kept but initStarScene() is called conditionally.
+        import * as THREE from "https://cdn.skypack.dev/three@0.136.0";
+        import { OrbitControls } from "https://cdn.skypack.dev/three@0.136.0/examples/jsm/controls/OrbitControls";
+
+        let star_scene, star_camera, star_renderer, star_controls, star_gu, star_pts, star_sizes, star_shift, star_p, star_clock;
+        let starSceneInitialized = false;
+
+        function initStarScene() {
+            if (starSceneInitialized) return;
+            const starSceneContainer = document.getElementById('starScene');
+            // Check if iframe is present and loading content, if so, maybe don't init JS fallback.
+            // For simplicity, we'll allow JS fallback to run if iframe fails or is removed.
+            
+            star_scene = new THREE.Scene();
+            star_scene.background = new THREE.Color(0x160016);
+
+            star_camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 1000);
+            star_camera.position.set(0, 4, 21);
+
+            star_renderer = new THREE.WebGLRenderer({ antialias: true });
+            star_renderer.setSize(window.innerWidth, window.innerHeight);
+            // Ensure the input container is not overwritten if it's already there
+            if (!document.getElementById('inputContainer').contains(star_renderer.domElement)) {
+                 // Insert renderer canvas behind input container if input container is direct child of starScene
+                const inputContainer = document.getElementById('inputContainer');
+                if (starSceneContainer.contains(inputContainer) && starSceneContainer === inputContainer.parentNode) {
+                    starSceneContainer.insertBefore(star_renderer.domElement, inputContainer);
+                } else {
+                    starSceneContainer.appendChild(star_renderer.domElement); 
+                }
+            }
+
+            star_renderer.domElement.style.position = 'absolute';
+            star_renderer.domElement.style.top = '0';
+            star_renderer.domElement.style.left = '0';
+            star_renderer.domElement.style.zIndex = '1'; // Behind the input
+
+            star_controls = new OrbitControls(star_camera, star_renderer.domElement);
+            star_controls.enableDamping = true;
+            star_controls.enablePan = false;
+
+            star_gu = { time: { value: 0 } };
+            star_sizes = [];
+            star_shift = [];
+
+            let pushStarShift = () => {
+                star_shift.push(
+                    Math.random() * Math.PI,
+                    Math.random() * Math.PI * 2,
+                    (Math.random() * 0.9 + 0.1) * Math.PI * 0.1,
+                    Math.random() * 0.9 + 0.1
+                );
+            };
+
+            star_pts = new Array(50000).fill().map(() => {
+                star_sizes.push(Math.random() * 1.5 + 0.5);
+                pushStarShift();
+                return new THREE.Vector3().randomDirection().multiplyScalar(Math.random() * 0.5 + 9.5);
+            });
+
+            for (let i = 0; i < 100000; i++) {
+                let r = 10, R = 40;
+                let rand = Math.pow(Math.random(), 1.5);
+                let radius = Math.sqrt(R * R * rand + (1 - rand) * r * r);
+                star_pts.push(new THREE.Vector3().setFromCylindricalCoords(radius, Math.random() * 2 * Math.PI, (Math.random() - 0.5) * 2));
+                star_sizes.push(Math.random() * 1.5 + 0.5);
+                pushStarShift();
+            }
+
+            let g = new THREE.BufferGeometry().setFromPoints(star_pts);
+            g.setAttribute("sizes", new THREE.Float32BufferAttribute(star_sizes, 1));
+            g.setAttribute("shift", new THREE.Float32BufferAttribute(star_shift, 4));
+            
+            let m = new THREE.PointsMaterial({
+                size: 0.125,
+                transparent: true,
+                depthTest: false,
+                blending: THREE.AdditiveBlending,
+                onBeforeCompile: shader => {
+                    shader.uniforms.time = star_gu.time;
+                    shader.vertexShader = `
+                        uniform float time;
+                        attribute float sizes;
+                        attribute vec4 shift;
+                        varying vec3 vColor;
+                        ${shader.vertexShader}
+                    `
+                    .replace(
+                        `gl_PointSize = size;`,
+                        `gl_PointSize = size * sizes;`
+                    )
+                    .replace(
+                        `#include <color_vertex>`,
+                        `#include <color_vertex>
+                        float d = length(abs(position)/vec3(40.,10.,40));
+                        d=clamp(d,0.,1.);
+                        vColor = mix(vec3(227.,155.,0.),vec3(100.,50.,255.),d)/255.;`
+                    )
+                    .replace(
+                        `#include <begin_vertex>`,
+                        `#include <begin_vertex>
+                        float t = time;
+                        float moveT = mod(shift.x + shift.z * t,PI2);
+                        float moveS = mod(shift.y + shift.z * t,PI2);
+                        transformed += vec3(cos(moveS) * sin(moveT),cos(moveT),sin(moveS)*sin(moveT)) * shift.w;
+                        `
+                    );
+                    shader.fragmentShader = `
+                        varying vec3 vColor;
+                        ${shader.fragmentShader}
+                    `.replace(
+                        `#include <clipping_planes_fragment>`,
+                        `#include <clipping_planes_fragment>
+                        float d = length(gl_PointCoord.xy - 0.5);
+                    `
+                    ).replace(
+                        `vec4 diffuseColor = vec4( diffuse, opacity );`,
+                        `vec4 diffuseColor = vec4( vColor, smoothstep(0.5, 0.1, d));`
+                    );
+                }
+            });
+
+            star_p = new THREE.Points(g, m);
+            star_p.rotation.order = "ZYX";
+            star_p.rotation.z = 0.2;
+            star_scene.add(star_p);
+
+            star_clock = new THREE.Clock();
+            starSceneInitialized = true;
+            animateStarScene();
+        }
+
+        function animateStarScene() {
+            if (!starSceneInitialized || document.getElementById('starScene').style.display === 'none') return;
+            requestAnimationFrame(animateStarScene);
+            if (star_controls) star_controls.update();
+            let t = star_clock.getElapsedTime() * 0.5;
+            star_gu.time.value = t * Math.PI;
+            if (star_p) star_p.rotation.y = t * 0.05;
+            if (star_renderer) star_renderer.render(star_scene, star_camera);
+        }
+        
+        // Resize handled globally later
+
+    </script>
+
+    <script>
+        // --- Birthday Scene (Scene 2) --- 
+        let birthdayMessageDisplayed = false;
+        function initBirthdayScene() {
+            const birthdayScene = document.getElementById('birthdayScene');
+            createBirthdayStars();
+            
+            const messageElement = document.getElementById('message');
+            messageElement.innerHTML = ''; // Clear previous message if any
+            const message = '致崭新的一岁,在烛光摇曳的时刻，想把最明亮的期许送给你。愿新的一岁里，生活像被施了魔法的花园，每天都有惊喜绽放。不必追赶时间的脚步，从容地去感受每一阵温柔的风，聆听每一声清脆的鸟鸣。愿你拥有探索未知的勇气，去触摸未曾抵达的星辰，在热爱的领域里自由生长；愿你被温暖与善意环绕，遇到的每一个人都真诚相待，每一段旅程都充满欢笑；愿你始终保持对生活的热忱，在平淡的日子里也能发现诗意，在风雨中依然相信彩虹。新的一岁，愿所有美好，如春日繁花，如期而至。'
+            
+            messageElement.innerHTML = ''; // Clear previous message before typing new one
+            let i = 0;
+            const interval = setInterval(() => {
+                if (i < message.length) {
+                    const charSpan = document.createElement('span');
+                    charSpan.className = 'char';
+                    charSpan.textContent = message.charAt(i);
+                    // charSpan.style.animationDelay = `${i * 0.1}s`; // Animation delay handled by CSS if needed or can be kept
+                    messageElement.appendChild(charSpan);
+                    // Trigger reflow to restart animation for each char if needed, or rely on staggered display
+                    void charSpan.offsetWidth; // Trigger reflow
+                    charSpan.style.opacity = 1; // Make it visible after adding
+                    charSpan.style.animationDelay = `${i * 0.05}s`; // Staggered appearance
+
+                    i++;
+                } else {
+                    clearInterval(interval);
+                    birthdayMessageDisplayed = true; 
+                }
+            }, 80); // Slightly faster typing
+        }
+
+        function createBirthdayStars() {
+            const starsCount = 150; // Reduced for performance with other scenes
+            const birthdayScene = document.getElementById('birthdayScene');
+            // Clear existing stars if any
+            const existingStars = birthdayScene.querySelectorAll('.star_particle');
+            existingStars.forEach(star => star.remove());
+
+            for (let i = 0; i < starsCount; i++) {
+                const star = document.createElement('div');
+                star.className = 'star_particle';
+                
+                const x = Math.random() * 100;
+                const y = Math.random() * 100;
+                const size = Math.random() * 2.5 + 0.5; // Slightly smaller
+                const duration = Math.random() * 1.5 + 0.5;
+                
+                star.style.left = `${x}vw`;
+                star.style.top = `${y}vh`;
+                star.style.width = `${size}px`;
+                star.style.height = `${size}px`;
+                star.style.animation = `twinkle_anim ${duration}s infinite ease-in-out alternate`;
+                
+                birthdayScene.appendChild(star);
+            }
+        }
+
+        // --- Fireworks Scene (Scene 3) ---
+        let fw_pi, fw_ctx, fw_canvas, fw_cx, fw_cy, fw_playerZ, fw_playerX, fw_playerY, fw_playerVX, fw_playerVY, fw_playerVZ, fw_pitch, fw_yaw, fw_pitchV, fw_yawV;
+        let fw_scale, fw_seedTimer, fw_seedInterval, fw_seedLife, fw_gravity;
+        let fw_seeds, fw_sparkPics, fw_sparks;
+        let fw_pow = [];
+        let fw_frames;
+        let fw_s = "https://cantelope.org/NYE/";
+        let fireworksLoopActive = false;
+        let fw_animationFrameId;
+        let fireworksInitialized = false;
+
+        function fw_initVars(){
+            fw_pi=Math.PI;
+            fw_canvas=document.getElementById("fireworksCanvas");
+            if (!fw_canvas) { console.error("Fireworks canvas not found!"); return false; }
+            fw_ctx=fw_canvas.getContext("2d");
+            fw_canvas.width=window.innerWidth;
+            fw_canvas.height=window.innerHeight;
+            fw_cx=fw_canvas.width/2;
+            fw_cy=fw_canvas.height/2;
+            fw_playerZ=-25;
+            fw_playerX=fw_playerY=fw_playerVX=fw_playerVY=fw_playerVZ=fw_pitch=fw_yaw=fw_pitchV=fw_yawV=0;
+            fw_scale=600;
+            fw_seedTimer=0;fw_seedInterval=3;fw_seedLife=100;fw_gravity=.02;
+            fw_seeds=new Array();
+            fw_sparkPics=new Array();
+            for(let i=1;i<=10;++i){
+                let sparkPic=new Image();
+                sparkPic.src=fw_s+"spark"+i+".png";
+                fw_sparkPics.push(sparkPic);
+            }
+            fw_sparks=new Array();
+            fw_pow = [];
+            for(let i=1; i<=4; ++i) {
+                // Preload sounds if not already loaded
+                if (!fw_pow[i-1]) {
+                    const audio = new Audio(fw_s+"pow"+i+".ogg");
+                    fw_pow[i-1] = audio;
+                }
+            }
+            fw_frames = 0;
+            fireworksInitialized = true;
+            return true;
+        }
+
+        function fw_rasterizePoint(x,y,z){
+            var p,d;
+            x-=fw_playerX; y-=fw_playerY; z-=fw_playerZ;
+            p=Math.atan2(x,z); d=Math.sqrt(x*x+z*z);
+            x=Math.sin(p-fw_yaw)*d; z=Math.cos(p-fw_yaw)*d;
+            p=Math.atan2(y,z); d=Math.sqrt(y*y+z*z);
+            y=Math.sin(p-fw_pitch)*d; z=Math.cos(p-fw_pitch)*d;
+            var rx1=-1000,ry1=1,rx2=1000,ry2=1,rx3=0,ry3=0,rx4=x,ry4=z,uc=(ry4-ry3)*(rx2-rx1)-(rx4-rx3)*(ry2-ry1);
+            if(!uc) return {x:0,y:0,d:-1};
+            var ua=((rx4-rx3)*(ry1-ry3)-(ry4-ry3)*(rx1-rx3))/uc;
+            var ub=((rx2-rx1)*(ry1-ry3)-(ry2-ry1)*(rx1-rx3))/uc;
+            if(!z)z=.000000001;
+            if(ua>0&&ua<1&&ub>0&&ub<1){
+                return { x:fw_cx+(rx1+ua*(rx2-rx1))*fw_scale, y:fw_cy+y/z*fw_scale, d:Math.sqrt(x*x+y*y+z*z) };
+            }else{
+                return { x:fw_cx+(rx1+ua*(rx2-rx1))*fw_scale, y:fw_cy+y/z*fw_scale, d:-1 };
+            }
+        }
+
+        function fw_spawnSeed(){
+            let seed=new Object();
+            seed.x=-50+Math.random()*100; seed.y=25; seed.z=-50+Math.random()*100;
+            seed.vx=.1-Math.random()*.2; seed.vy=-1.5; seed.vz=.1-Math.random()*.2;
+            seed.born=fw_frames;
+            fw_seeds.push(seed);
+        }
+
+        function fw_splode(x,y,z){
+            let t=120+parseInt(Math.random()*250);
+            let sparkV=2.0+Math.random()*3.5;
+            let type=parseInt(Math.random()*4);
+            let pic1, pic2, pic3;
+            switch(type){
+                case 0: pic1=parseInt(Math.random()*10); break;
+                case 1: pic1=parseInt(Math.random()*10); do{ pic2=parseInt(Math.random()*10); }while(pic2==pic1); break;
+                case 2: pic1=parseInt(Math.random()*10); do{ pic2=parseInt(Math.random()*10); }while(pic2==pic1); do{ pic3=parseInt(Math.random()*10); }while(pic3==pic1 || pic3==pic2); break;
+            }
+            for(let m=1;m<t;++m){
+                let spark=new Object();
+                spark.x=x; spark.y=y; spark.z=z;
+                let p1=fw_pi*2*Math.random(); let p2=fw_pi*Math.random();
+                let v=sparkV*(1+Math.random()/6)
+                spark.vx=Math.sin(p1)*Math.sin(p2)*v; spark.vz=Math.cos(p1)*Math.sin(p2)*v; spark.vy=Math.cos(p2)*v;
+                switch(type){
+                    case 0: spark.img=fw_sparkPics[pic1]; break;
+                    case 1: spark.img=fw_sparkPics[parseInt(Math.random()*2)?pic1:pic2]; break;
+                    case 2: switch(parseInt(Math.random()*3)){ case 0: spark.img=fw_sparkPics[pic1]; break; case 1: spark.img=fw_sparkPics[pic2]; break; case 2: spark.img=fw_sparkPics[pic3]; break; } break;
+                }
+                spark.radius=50+Math.random()*80;
+                spark.alpha=1.2; spark.trail=new Array();
+                fw_sparks.push(spark);
+            }
+            let soundToPlay = fw_pow[parseInt(Math.random()*4)];
+            if (soundToPlay) {
+                 let d_sound=Math.sqrt((x-fw_playerX)*(x-fw_playerX)+(y-fw_playerY)*(y-fw_playerY)+(z-fw_playerZ)*(z-fw_playerZ));
+                 soundToPlay.volume=Math.min(1, 1.5/(1+d_sound/10));
+                 soundToPlay.play().catch(e => console.warn("Fireworks sound play failed:", e));
+            }
+        }
+
+        function fw_doLogic(){
+            if(fw_seedTimer<fw_frames){ fw_seedTimer=fw_frames+fw_seedInterval*Math.random()*10; fw_spawnSeed(); }
+            for(let i=0;i<fw_seeds.length;++i){
+                fw_seeds[i].vy+=fw_gravity; fw_seeds[i].x+=fw_seeds[i].vx; fw_seeds[i].y+=fw_seeds[i].vy; fw_seeds[i].z+=fw_seeds[i].vz;
+                if(fw_frames-fw_seeds[i].born>fw_seedLife){ fw_splode(fw_seeds[i].x,fw_seeds[i].y,fw_seeds[i].z); fw_seeds.splice(i,1); }
+            }
+            for(let i=0;i<fw_sparks.length;++i){
+                if(fw_sparks[i].alpha>0 && fw_sparks[i].radius>5){
+                    fw_sparks[i].alpha-=.005;
+                    fw_sparks[i].radius/=1.01;
+                    fw_sparks[i].vy+=fw_gravity;
+                    let point=new Object(); point.x=fw_sparks[i].x; point.y=fw_sparks[i].y; point.z=fw_sparks[i].z;
+                    if(fw_sparks[i].trail.length){
+                        let x=fw_sparks[i].trail[fw_sparks[i].trail.length-1].x; let y=fw_sparks[i].trail[fw_sparks[i].trail.length-1].y; let z=fw_sparks[i].trail[fw_sparks[i].trail.length-1].z;
+                        let d=((point.x-x)*(point.x-x)+(point.y-y)*(point.y-y)+(point.z-z)*(point.z-z));
+                        if(d>9){ fw_sparks[i].trail.push(point); }
+                    }else{ fw_sparks[i].trail.push(point); }
+                    if(fw_sparks[i].trail.length>7)fw_sparks[i].trail.splice(0,1);
+                    fw_sparks[i].x+=fw_sparks[i].vx; fw_sparks[i].y+=fw_sparks[i].vy; fw_sparks[i].z+=fw_sparks[i].vz;
+                    fw_sparks[i].vx/=1.075; fw_sparks[i].vy/=1.075; fw_sparks[i].vz/=1.075;
+                }else{ fw_sparks.splice(i,1); }
+            }
+            let p=Math.atan2(fw_playerX,fw_playerZ); let d=Math.sqrt(fw_playerX*fw_playerX+fw_playerZ*fw_playerZ);
+            d+=Math.sin(fw_frames/80)/1.25; let t=Math.sin(fw_frames/200)/40;
+            fw_playerX=Math.sin(p+t)*d; fw_playerZ=Math.cos(p+t)*d;
+            fw_yaw=fw_pi+p+t;
+        }
+
+        function fw_draw(){
+            if (!fw_ctx) return;
+            fw_ctx.clearRect(0,0,fw_cx*2,fw_cy*2);
+            fw_ctx.fillStyle="#ff8";
+            for(let i=-100;i<100;i+=3){
+                for(let j=-100;j<100;j+=4){
+                    let x=i;z=j;y=25;
+                    let point=fw_rasterizePoint(x,y,z);
+                    if(point.d!=-1){
+                        let size=250/(1+point.d);
+                        let d_ground = Math.sqrt(x * x + z * z);
+                        let a = 0.75 - Math.pow(d_ground / 100, 6) * 0.75;
+                        if(a>0){ fw_ctx.globalAlpha = a; fw_ctx.fillRect(point.x-size/2,point.y-size/2,size,size); }
+                    }
+                }
+            }
+            fw_ctx.globalAlpha=1;
+            for(let i=0;i<fw_seeds.length;++i){
+                let point=fw_rasterizePoint(fw_seeds[i].x,fw_seeds[i].y,fw_seeds[i].z);
+                if(point.d!=-1){ let size=200/(1+point.d); fw_ctx.fillRect(point.x-size/2,point.y-size/2,size,size); }
+            }
+            let point1=new Object();
+            for(let i=0;i<fw_sparks.length;++i){
+                let point=fw_rasterizePoint(fw_sparks[i].x,fw_sparks[i].y,fw_sparks[i].z);
+                if(point.d!=-1){
+                    let size=fw_sparks[i].radius*200/(1+point.d);
+                    if(fw_sparks[i].alpha<0)fw_sparks[i].alpha=0;
+                    if(fw_sparks[i].trail.length){
+                        point1.x=point.x; point1.y=point.y;
+                        let r = Math.floor(Math.random() * 156) + 100;
+                        let g = Math.floor(Math.random() * 156) + 100;
+                        let b = Math.floor(Math.random() * 156) + 100;
+                        const brightComponent = Math.floor(Math.random() * 3);
+                        if (brightComponent === 0) r = Math.floor(Math.random() * 56) + 200;
+                        else if (brightComponent === 1) g = Math.floor(Math.random() * 56) + 200;
+                        else b = Math.floor(Math.random() * 56) + 200;
+                        fw_ctx.strokeStyle = "rgb(" + r + "," + g + "," + b + ")";
+                        for(let j=fw_sparks[i].trail.length-1;j>=0;--j){
+                            let point2=fw_rasterizePoint(fw_sparks[i].trail[j].x,fw_sparks[i].trail[j].y,fw_sparks[i].trail[j].z);
+                            if(point2.d!=-1){
+                                fw_ctx.globalAlpha=j/fw_sparks[i].trail.length*fw_sparks[i].alpha/2;
+                                fw_ctx.beginPath(); fw_ctx.moveTo(point1.x,point1.y);
+                                fw_ctx.lineWidth=1+fw_sparks[i].radius*10/(fw_sparks[i].trail.length-j)/(1+point2.d);
+                                fw_ctx.lineTo(point2.x,point2.y); fw_ctx.stroke();
+                                point1.x=point2.x; point1.y=point2.y;
+                            }
+                        }
+                    }
+                    fw_ctx.globalAlpha=fw_sparks[i].alpha;
+                    if (fw_sparks[i].img && fw_sparks[i].img.complete && fw_sparks[i].img.naturalHeight !== 0) {
+                         fw_ctx.drawImage(fw_sparks[i].img,point.x-size/2,point.y-size/2,size,size);
+                    }
+                }
+            }
+        }
+
+        function fw_frame(){
+            if (!fireworksLoopActive || !fw_ctx) return;
+            if(fw_frames>100000){ fw_seedTimer=0; fw_frames=0; }
+            fw_frames++;
+            fw_draw();
+            fw_doLogic();
+            fw_animationFrameId = requestAnimationFrame(fw_frame);
+        }
+
+        function initFireworksScene() {
+            if (!fireworksInitialized) {
+                if (!fw_initVars()) {
+                    console.error("Failed to initialize fireworks variables.");
+                    const fwScreen = document.getElementById('fireworksSceneContainer');
+                    if (fwScreen) fwScreen.innerHTML = '<p style="color:red; font-size:1.5em;">烟花效果加载失败。</p>';
+                    return;
+                }
+            }
+            fireworksLoopActive = true;
+            if (fw_animationFrameId) cancelAnimationFrame(fw_animationFrameId);
+            fw_frame();
+
+            // Clear any previous message and add new one
+            const fwScreen = document.getElementById('fireworksSceneContainer');
+            if (fwScreen) {
+                const existingFinalMsg = fwScreen.querySelector('.final-fireworks-message');
+                if (existingFinalMsg) existingFinalMsg.remove();
+                
+                setTimeout(() => {
+                    const finalMsg = document.createElement('div');
+                    finalMsg.className = 'final-fireworks-message';
+                    finalMsg.textContent = "恭喜小姐！19岁啦！！！";
+                    fwScreen.appendChild(finalMsg);
+                    setTimeout(() => finalMsg.style.opacity = 1, 100); 
+                }, 20000); // Show message after 20 seconds of fireworks
+            }
+        }
+
+        function stopFireworksScene() {
+            fireworksLoopActive = false;
+            if (fw_animationFrameId) {
+                cancelAnimationFrame(fw_animationFrameId);
+                fw_animationFrameId = null;
+            }
+            // Clear canvas if needed, or just hide the scene
+            if (fw_ctx) {
+                fw_ctx.clearRect(0, 0, fw_canvas.width, fw_canvas.height);
+            }
+             // Remove the message when stopping
+            const fwScreen = document.getElementById('fireworksSceneContainer');
+            if (fwScreen) {
+                const existingFinalMsg = fwScreen.querySelector('.final-fireworks-message');
+                if (existingFinalMsg) existingFinalMsg.remove();
+            }
+        }
+
+        // --- Scene Management --- 
+        const starSceneEl = document.getElementById('starScene');
+        const birthdaySceneEl = document.getElementById('birthdayScene');
+        const fireworksSceneEl = document.getElementById('fireworksSceneContainer');
+        const entryInput = document.getElementById('entryInput');
+
+        let currentScene = 1; // 1: Star, 2: Birthday, 3: Fireworks
+
+        function showScene(sceneNumber) {
+            starSceneEl.style.display = 'none';
+            birthdaySceneEl.style.display = 'none';
+            fireworksSceneEl.style.display = 'none';
+            stopFireworksScene(); // Stop fireworks if switching away
+
+            const starFrame = document.getElementById('starFrame');
+
+            if (sceneNumber === 1) {
+                starSceneEl.style.display = 'flex';
+                // If iframe src is set to star.html, it should load. 
+                // The JS fallback initStarScene() is called in DOMContentLoaded or if iframe fails.
+                // Ensure iframe is visible and input box is on top
+                if(starFrame) starFrame.style.display = 'block';
+                document.getElementById('inputContainer').style.zIndex = '100';
+            } else if (sceneNumber === 2) {
+                birthdaySceneEl.style.display = 'flex';
+                initBirthdayScene(); // Always re-init for message animation
+            } else if (sceneNumber === 3) {
+                fireworksSceneEl.style.display = 'block';
+                initFireworksScene();
+            }
+            currentScene = sceneNumber;
+        }
+
+        entryInput.addEventListener('keypress', function(event) {
+            if (event.key === 'Enter' || event.keyCode === 13) {
+                // Input can be empty, still proceed
+                showScene(2); // Go to Birthday scene
+            }
+        });
+        
+        // Allow clicking on birthday scene to go to fireworks AFTER message is displayed
+        birthdaySceneEl.addEventListener('click', () => {
+            if (birthdayMessageDisplayed) {
+                showScene(3); // Go to Fireworks scene
+            }
+        });
+
+        // Allow clicking on fireworks scene to go back to birthday
+        fireworksSceneEl.addEventListener('click', () => {
+            showScene(2); // Go back to Birthday scene
+        });
+
+        // Initial setup
+        document.addEventListener('DOMContentLoaded', () => {
+            // Attempt to load star.html in iframe first.
+            // The initStarScene() JS fallback can be called if iframe fails or is not preferred.
+            // For now, we rely on the iframe for star.html's content.
+            // If you want the JS version of stars to run if iframe is problematic, you might call initStarScene() here.
+            // initStarScene(); 
+            showScene(1);
+            
+            // Global resize listener
+            window.addEventListener('resize', () => {
+                // Star scene (JS fallback version)
+                if (starSceneInitialized && star_camera && star_renderer) {
+                    star_camera.aspect = window.innerWidth / window.innerHeight;
+                    star_camera.updateProjectionMatrix();
+                    star_renderer.setSize(window.innerWidth, window.innerHeight);
+                }
+                // Fireworks scene
+                if (fw_canvas && fireworksLoopActive) {
+                    fw_canvas.width = window.innerWidth;
+                    fw_canvas.height = window.innerHeight;
+                    fw_cx = fw_canvas.width / 2;
+                    fw_cy = fw_canvas.height / 2;
+                }
+                // Birthday scene is mostly CSS responsive
+            });
+        });
+
+    </script>
+</body>
+</html>

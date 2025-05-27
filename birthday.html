@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>生日祝福</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #050016;
+            color: #ff88ff;
+            overflow: hidden;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+
+        #message {
+            font-size: clamp(1.5rem, 5vw, 2.5rem);
+            max-width: 90%;
+            line-height: 1.5;
+        }
+
+        .char {
+            display: inline-block;
+            opacity: 0;
+            animation: blink 1s infinite alternate;
+        }
+
+        @keyframes blink {
+            0% { opacity: 0; }
+            100% { opacity: 1; }
+        }
+
+        .star {
+            position: absolute;
+            background-color: white;
+            border-radius: 50%;
+            pointer-events: none;
+            animation: twinkle 1s infinite ease-in-out alternate;
+        }
+
+        @keyframes twinkle {
+            from { opacity: 0.2; transform: scale(0.8); }
+            to { opacity: 1; transform: scale(1.2); }
+        }
+    </style>
+</head>
+<body>
+    <div id="message"></div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            createStars();
+            
+            const messageElement = document.getElementById('message');
+            const message = '亲爱的小姐，祝你19岁生日快乐！愿这新的一岁，如烟花般绚烂，如星空般璀璨，充满无尽的惊喜与美好！';
+            
+            let i = 0;
+            const interval = setInterval(() => {
+                if (i < message.length) {
+                    const charSpan = document.createElement('span');
+                    charSpan.className = 'char';
+                    charSpan.textContent = message.charAt(i);
+                    charSpan.style.animationDelay = `${i * 0.1}s`;
+                    messageElement.appendChild(charSpan);
+                    i++;
+                } else {
+                    clearInterval(interval);
+                }
+            }, 100);
+        });
+        
+        function createStars() {
+            const starsCount = 300;
+            const body = document.body;
+            
+            for (let i = 0; i < starsCount; i++) {
+                const star = document.createElement('div');
+                star.className = 'star';
+                
+                const x = Math.random() * 100;
+                const y = Math.random() * 100;
+                const size = Math.random() * 3 + 1;
+                const duration = Math.random() * 2 + 0.5;
+                
+                star.style.left = `${x}vw`;
+                star.style.top = `${y}vh`;
+                star.style.width = `${size}px`;
+                star.style.height = `${size}px`;
+                star.style.animation = `twinkle ${duration}s infinite ease-in-out alternate`;
+                
+                body.appendChild(star);
+            }
+        }
+    </script>
+</body>
+</html>
+    
